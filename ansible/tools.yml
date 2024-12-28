@@ -1,7 +1,10 @@
 ---
-- name: Setup Docker, Jenkins, SonarQube, SonarQube Scanner, Helm, Kubectl, Trivy
+- name: Setup Docker, Jenkins, SonarQube, SonarQube Scanner, Helm, Kubectl, Trivy, Prometheus, Grafana on Amazon Linux 2023
   hosts: all
   become: true
+  vars:
+    ansible_python_interpreter: /usr/bin/python3  # Ensure the correct Python interpreter
+
   tasks:
 
     - name: Gather facts
@@ -57,6 +60,21 @@
       yum:
         name: jenkins
         state: present
+
+    - name: Start and enable Jenkins service
+      systemd:
+        name: jenkins
+        state: started
+        enabled: true
+
+    - name: Verify Jenkins service status
+      command: systemctl is-active jenkins
+      register: jenkins_status
+      changed_when: false
+
+    - name: Print Jenkins service status
+      debug:
+        msg: "Jenkins service status: {{ jenkins_status.stdout }}"
 
     - name: Install unzip
       yum:
@@ -161,6 +179,12 @@
       debug:
         var: sonar_scanner_version.stdout
 
+    # Install the firewall module for Ansible
+    - name: Install python-firewall package
+      yum:
+        name: python3-firewall
+        state: present
+
     - name: Retrieve latest stable version of kubectl
       command: "curl -L -s https://dl.k8s.io/release/stable.txt"
       register: kubectl_version
@@ -186,6 +210,14 @@
         msg: "kubectl installation failed or version check failed."
       when: kubectl_version_check.rc != 0
 
+    - name: Connect to EKS Cluster
+      command: aws eks --region ap-south-1 update-kubeconfig --name Micro-service
+      environment:
+        AWS_ACCESS_KEY_ID: "{{ lookup('env', 'AWS_ACCESS_KEY_ID') }}"
+        AWS_SECRET_ACCESS_KEY: "{{ lookup('env', 'AWS_SECRET_ACCESS_KEY') }}"
+        AWS_DEFAULT_REGION: ap-south-1
+        KUBECONFIG: /home/ec2-user/.kube/config
+
     - name: Install Helm
       shell: "curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash"
       args:
@@ -210,3 +242,110 @@
     - name: Show Trivy version
       debug:
         var: trivy_version.stdout
+
+    - name: Download Prometheus tarball
+      get_url:
+        url: "https://github.com/prometheus/prometheus/releases/download/v2.44.0/prometheus-2.44.0.linux-amd64.tar.gz"
+        dest: "/tmp/prometheus-2.44.0.linux-amd64.tar.gz"
+
+    - name: Extract Prometheus tarball
+      unarchive:
+        src: "/tmp/prometheus-2.44.0.linux-amd64.tar.gz"
+        dest: "/tmp/"
+        remote_src: yes
+
+    - name: Move Prometheus binary to /usr/local/bin
+      command:
+        cmd: mv /tmp/prometheus-2.44.0.linux-amd64/prometheus /usr/local/bin/
+        creates: /usr/local/bin/prometheus
+
+    - name: Move promtool binary to /usr/local/bin
+      command:
+        cmd: mv /tmp/prometheus-2.44.0.linux-amd64/promtool /usr/local/bin/
+        creates: /usr/local/bin/promtool
+
+    - name: Create Prometheus configuration directory
+      file:
+        path: "/etc/prometheus"
+        state: directory
+        mode: "0755"
+
+    - name: Move Prometheus config file to /etc/prometheus
+      command:
+        cmd: mv /tmp/prometheus-2.44.0.linux-amd64/prometheus.yml /etc/prometheus/prometheus.yml
+        creates: /etc/prometheus/prometheus.yml
+
+    - name: Create Prometheus systemd service file
+      copy:
+        dest: /etc/systemd/system/prometheus.service
+        content: |
+          [Unit]
+          Description=Prometheus monitoring system
+          Documentation=http://prometheus.io/docs/introduction/overview/
+          After=network.target
+
+          [Service]
+          User=prometheus
+          Group=prometheus
+          ExecStart=/usr/local/bin/prometheus \
+            --config.file=/etc/prometheus/prometheus.yml \
+            --storage.tsdb.path=/var/lib/prometheus
+          Restart=always
+          LimitNOFILE=4096
+          KillSignal=SIGINT
+          SyslogIdentifier=prometheus
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Create prometheus user
+      user:
+        name: prometheus
+        state: present
+
+    - name: Set permissions for Prometheus directories
+      file:
+        path: /var/lib/prometheus
+        state: directory
+        owner: prometheus
+        group: prometheus
+        mode: '0755'
+        recurse: yes
+
+    - name: Reload systemd and start Prometheus service
+      systemd:
+        daemon_reload: yes
+        name: prometheus
+        enabled: yes
+        state: started
+
+    - name: Check the status of the Prometheus service
+      systemd:
+        name: prometheus
+        state: started
+        enabled: yes
+
+    # Grafana Installation
+    - name: Add Grafana repository
+      yum_repository:
+        name: grafana
+        description: Grafana
+        baseurl: https://packages.grafana.com/oss/rpm
+        gpgcheck: no
+        enabled: yes
+
+    - name: Install Grafana
+      yum:
+        name: grafana
+        state: present
+
+    - name: Start and enable Grafana service
+      systemd:
+        name: grafana-server
+        state: started
+        enabled: true
+
+    - name: Open Grafana port in firewall (if applicable)
+      ansible.builtin.command:
+        cmd: iptables -I INPUT -p tcp --dport 3000 -j ACCEPT
+      when: ansible_facts.os_family == "Amazon"
