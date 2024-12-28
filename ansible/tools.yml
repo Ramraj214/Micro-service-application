@@ -1,0 +1,212 @@
+---
+- name: Setup Docker, Jenkins, SonarQube, SonarQube Scanner, Helm, Kubectl, Trivy
+  hosts: all
+  become: true
+  tasks:
+
+    - name: Gather facts
+      setup:
+
+    - name: Install Docker
+      yum:
+        name: docker
+        state: present
+
+    - name: Start and enable Docker service
+      systemd:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Add the ec2-user to the Docker group
+      user:
+        name: ec2-user
+        groups: docker
+        append: yes
+
+    - name: Notify user about re-login requirement
+      debug:
+        msg: "User 'ec2-user' has been added to the Docker group. Please log out and log back in to apply the changes."
+
+    - name: Update all packages
+      yum:
+        name: '*'
+        state: latest
+
+    - name: Install required dependencies
+      yum:
+        name:
+          - java-17-amazon-corretto
+          - wget
+        state: present
+
+    - name: Import Jenkins GPG key
+      rpm_key:
+        key: https://pkg.jenkins.io/redhat/jenkins.io.key
+        state: present
+
+    - name: Add Jenkins repository
+      yum_repository:
+        name: jenkins
+        description: Jenkins
+        baseurl: https://pkg.jenkins.io/redhat-stable/
+        gpgcheck: no
+        enabled: yes
+
+    - name: Install Jenkins
+      yum:
+        name: jenkins
+        state: present
+
+    - name: Install unzip
+      yum:
+        name: unzip
+        state: present
+
+    - name: Download SonarQube
+      get_url:
+        url: "https://binaries.sonarsource.com/Distribution/sonarqube/sonarqube-9.9.1.69595.zip"
+        dest: /tmp/sonarqube.zip
+
+    - name: Extract SonarQube
+      unarchive:
+        src: /tmp/sonarqube.zip
+        dest: /opt/
+        remote_src: yes
+        creates: /opt/sonarqube-9.9.1.69595  # Ensures the extraction only happens if the directory does not exist
+
+    - name: Verify SonarQube Extraction
+      stat:
+        path: /opt/sonarqube-9.9.1.69595
+      register: sonarqube_stat
+
+    - name: Fail if SonarQube extraction failed
+      fail:
+        msg: "SonarQube extraction failed, directory does not exist!"
+      when: not sonarqube_stat.stat.exists
+
+    - name: Create SonarQube user
+      user:
+        name: sonarqube
+        system: yes
+
+    - name: Change ownership of SonarQube directory
+      file:
+        path: /opt/sonarqube-9.9.1.69595
+        owner: sonarqube
+        group: sonarqube
+        state: directory
+        recurse: yes
+
+    - name: Set up SonarQube service
+      copy:
+        dest: /etc/systemd/system/sonarqube.service
+        content: |
+          [Unit]
+          Description=SonarQube service
+          After=syslog.target network.target
+
+          [Service]
+          Type=forking
+          ExecStart=/opt/sonarqube-9.9.1.69595/bin/linux-x86-64/sonar.sh start
+          ExecStop=/opt/sonarqube-9.9.1.69595/bin/linux-x86-64/sonar.sh stop
+          User=sonarqube
+          Group=sonarqube
+          Restart=always
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Reload systemd and start SonarQube service
+      systemd:
+        daemon_reload: yes
+        name: sonarqube
+        enabled: yes
+        state: started
+
+    - name: Download SonarQube Scanner
+      get_url:
+        url: "https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.8.0.2856-linux.zip"
+        dest: /tmp/sonar-scanner.zip
+
+    - name: Extract SonarQube Scanner
+      unarchive:
+        src: /tmp/sonar-scanner.zip
+        dest: /opt/
+        remote_src: yes
+
+    - name: Rename extracted directory for easier access
+      command: mv /opt/sonar-scanner-4.8.0.2856-linux /opt/sonar-scanner
+      args:
+        creates: "/opt/sonar-scanner"
+
+    - name: Set up SonarQube Scanner in PATH
+      lineinfile:
+        path: /etc/profile.d/sonar_scanner.sh
+        line: 'export PATH=$PATH:/opt/sonar-scanner/bin'
+        create: yes
+        state: present
+        mode: '0755'
+
+    - name: Reload environment variables
+      shell: source /etc/profile.d/sonar_scanner.sh
+      args:
+        executable: /bin/bash
+
+    - name: Verify SonarQube Scanner installation
+      command: /opt/sonar-scanner/bin/sonar-scanner -v
+      register: sonar_scanner_version
+
+    - name: Show SonarQube Scanner version
+      debug:
+        var: sonar_scanner_version.stdout
+
+    - name: Retrieve latest stable version of kubectl
+      command: "curl -L -s https://dl.k8s.io/release/stable.txt"
+      register: kubectl_version
+      changed_when: false
+
+    - name: Install kubectl
+      get_url:
+        url: "https://dl.k8s.io/release/{{ kubectl_version.stdout }}/bin/linux/amd64/kubectl"
+        dest: /usr/local/bin/kubectl
+        mode: '0755'
+        force: yes
+
+    - name: Ensure kubectl is executable
+      command: chmod +x /usr/local/bin/kubectl
+
+    - name: Check kubectl version
+      command: /usr/local/bin/kubectl version --client
+      register: kubectl_version_check
+      changed_when: false
+
+    - name: Fail if kubectl is not installed correctly
+      fail:
+        msg: "kubectl installation failed or version check failed."
+      when: kubectl_version_check.rc != 0
+
+    - name: Install Helm
+      shell: "curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash"
+      args:
+        creates: /usr/local/bin/helm
+
+    - name: Download Trivy
+      get_url:
+        url: https://github.com/aquasecurity/trivy/releases/download/v0.22.0/trivy_0.22.0_Linux-64bit.tar.gz
+        dest: "/tmp/trivy.tar.gz"
+
+    - name: Extract Trivy
+      unarchive:
+        src: "/tmp/trivy.tar.gz"
+        dest: "/usr/local/bin/"
+        remote_src: yes
+
+    - name: Verify Trivy installation
+      command: trivy --version
+      register: trivy_version
+      changed_when: false
+
+    - name: Show Trivy version
+      debug:
+        var: trivy_version.stdout

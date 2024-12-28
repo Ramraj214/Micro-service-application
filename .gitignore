@@ -1,0 +1,14 @@
+# Ignore virtual environment
+venv/
+
+# Ignore video files
+*.mp4
+
+# Ignore .docx files (if you don't want to track docs)
+*.docx
+
+# Ignore .env file in the auth-service directory
+/src/auth-service/.env
+
+# Ignore Terraform-related files
+terraform/
