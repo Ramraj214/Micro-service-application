@@ -1,0 +1,4 @@
+servive:
+  name: rabbitmq
+  port: 15672
+  
