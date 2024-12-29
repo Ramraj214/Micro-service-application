@@ -1,6 +1,6 @@
-secret: 
-  root_user: ramraj
-  root_password: ramraj07
-  username: ramraj
-  password: ramraj07
-  user_list: ramraj
+secret:
+  root_username: "ramraj"
+  root_password: "ramraj07"
+  username: "ramraj"
+  password: "ramraj07"
+  users_list: "ramraj"
