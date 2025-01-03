@@ -43,39 +43,6 @@
           - wget
         state: present
 
-    - name: Import Jenkins GPG key
-      rpm_key:
-        key: https://pkg.jenkins.io/redhat/jenkins.io.key
-        state: present
-
-    - name: Add Jenkins repository
-      yum_repository:
-        name: jenkins
-        description: Jenkins
-        baseurl: https://pkg.jenkins.io/redhat-stable/
-        gpgcheck: no
-        enabled: yes
-
-    - name: Install Jenkins
-      yum:
-        name: jenkins
-        state: present
-
-    - name: Start and enable Jenkins service
-      systemd:
-        name: jenkins
-        state: started
-        enabled: true
-
-    - name: Verify Jenkins service status
-      command: systemctl is-active jenkins
-      register: jenkins_status
-      changed_when: false
-
-    - name: Print Jenkins service status
-      debug:
-        msg: "Jenkins service status: {{ jenkins_status.stdout }}"
-
     - name: Install unzip
       yum:
         name: unzip
