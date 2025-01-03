@@ -13,6 +13,33 @@ def get_db_connection():
                             port=os.getenv(DATABASE_PORT))
     return conn
 
+@server.route('/signup', methods=['POST'])
+def signup():
+    auth_table_name = os.getenv('AUTH_TABLE')
+    data = request.json
+    if not data or not data.get('email') or not data.get('password'):
+        return jsonify({'message': 'Email and password are required!'}), 400
+    email = data['email']
+    password = data['password']
+    
+    hashed_password = generate_password_hash(password, method='sha256')
+    conn = get_db_connection()
+    cur = conn.cursor()
+    # Check if user already exists
+    cur.execute(f"SELECT email FROM {auth_table_name} WHERE email = %s", (email,))
+    if cur.fetchone():
+        return jsonify({'message': 'User already exists!'}), 409
+    # Insert new user into the database
+    try:
+        cur.execute(f"INSERT INTO {auth_table_name} (email, password) VALUES (%s, %s)", (email, hashed_password))
+        conn.commit()
+    except Exception as e:
+        return jsonify({'message': f'Error occurred: {str(e)}'}), 500
+    finally:
+        cur.close()
+        conn.close()
+    return jsonify({'message': 'User created successfully!'}), 201
+    
 
 @server.route('/login', methods=['POST'])
 def login():
