@@ -127,8 +127,8 @@
 
     - name: Set up SonarQube Scanner in PATH
       lineinfile:
-        path: /etc/profile.d/sonar_scanner.sh
-        line: 'export PATH=$PATH:/opt/sonar-scanner/bin'
+        path: /home/ec2-user/.bash_profile  
+        line: 'export PATH=$PATH:/opt/sonar-scanner/bin' 
         create: yes
         state: present
         mode: '0755'
