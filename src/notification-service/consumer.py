@@ -5,6 +5,8 @@ def main():
     # rabbitmq connection
     connection = pika.BlockingConnection(pika.ConnectionParameters(host="rabbitmq",heartbeat=0))
     channel = connection.channel()
+    channel.queue_declare(queue="mp3", durable=True)
+
 
     def callback(ch, method, properties, body):
         err = email.notification(body)
