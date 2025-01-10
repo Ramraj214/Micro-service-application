@@ -5,4 +5,4 @@ CREATE TABLE auth_user (
 );
 
 
-INSERT INTO auth_user (email, password) VALUES ('ramrajnagapure54321@gmail.com', '$2y$10$NTtLtSD1O43.5kVzc5nQqOyvDlzaCBtzsSUAx30ncTIUq2ZkrFCnO');
+INSERT INTO auth_user (email, password) VALUES ('ramrajnagapure54321@gmail.com', 'ramraj07');
