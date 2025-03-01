@@ -1,0 +1,19 @@
+plugin: amazon.aws.aws_ec2
+
+regions:
+  - ap-south-1
+
+# Filter for EC2 instances with the specific tag "WebServer1"
+filters:
+  "tag:Name":
+    - "Jenkins-Master"
+
+# Use the public IP address of the EC2 instance
+hostnames:
+  - ip-address
+
+# Additional configurations
+strict: False  # Ignore unknown attributes
+keyed_groups:
+  - key: tags.Name  # Group hosts by the "Name" tag
+    prefix: tag

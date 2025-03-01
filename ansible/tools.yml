@@ -1,14 +1,15 @@
 ---
 - name: Setup Docker, SonarQube, SonarQube Scanner, Helm, Kubectl, Trivy on Amazon Linux 2023
-  hosts: all
+  hosts: tag_Jenkins_Master  # Update this to match the group in your dynamic inventory
   become: true
+  gather_facts: true
   vars:
     ansible_python_interpreter: /usr/bin/python3  # Ensure the correct Python interpreter
 
   tasks:
 
     - name: Gather facts
-      setup:
+      setup:  
 
     - name: Install Docker
       yum:

@@ -1,0 +1,113 @@
+---
+- name: Install Prometheus and Grafana
+  hosts: tag_Jenkins_Master  # Replace with the appropriate host or group
+  become: true  # Ensure you have sudo access
+  tasks:
+
+    # Prometheus Installation
+    - name: Download Prometheus tarball
+      get_url:
+        url: "https://github.com/prometheus/prometheus/releases/download/v2.44.0/prometheus-2.44.0.linux-amd64.tar.gz"
+        dest: "/tmp/prometheus-2.44.0.linux-amd64.tar.gz"
+
+    - name: Extract Prometheus tarball
+      unarchive:
+        src: "/tmp/prometheus-2.44.0.linux-amd64.tar.gz"
+        dest: "/tmp/"
+        remote_src: yes
+
+    - name: Move Prometheus binary to /usr/local/bin
+      command:
+        cmd: mv /tmp/prometheus-2.44.0.linux-amd64/prometheus /usr/local/bin/
+        creates: /usr/local/bin/prometheus
+
+    - name: Move promtool binary to /usr/local/bin
+      command:
+        cmd: mv /tmp/prometheus-2.44.0.linux-amd64/promtool /usr/local/bin/
+        creates: /usr/local/bin/promtool
+
+    - name: Create Prometheus configuration directory
+      file:
+        path: "/etc/prometheus"
+        state: directory
+        mode: "0755"
+
+    - name: Move Prometheus config file to /etc/prometheus
+      command:
+        cmd: mv /tmp/prometheus-2.44.0.linux-amd64/prometheus.yml /etc/prometheus/prometheus.yml
+        creates: /etc/prometheus/prometheus.yml
+
+    - name: Create Prometheus systemd service file
+      copy:
+        dest: /etc/systemd/system/prometheus.service
+        content: |
+          [Unit]
+          Description=Prometheus monitoring system
+          Documentation=http://prometheus.io/docs/introduction/overview/
+          After=network.target
+
+          [Service]
+          User=prometheus
+          Group=prometheus
+          ExecStart=/usr/local/bin/prometheus \
+            --config.file=/etc/prometheus/prometheus.yml \
+            --storage.tsdb.path=/var/lib/prometheus
+          Restart=always
+          LimitNOFILE=4096
+          KillSignal=SIGINT
+          SyslogIdentifier=prometheus
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Create prometheus user
+      user: 
+        name: prometheus
+        state: present
+
+    - name: Set permissions for Prometheus directories
+      file:
+        path: /var/lib/prometheus
+        state: directory
+        owner: prometheus
+        group: prometheus
+        mode: '0755'
+        recurse: yes
+
+    - name: Reload systemd and start Prometheus service
+      systemd:
+        daemon_reload: yes
+        name: prometheus
+        enabled: yes
+        state: started
+
+    - name: Check the status of the Prometheus service
+      systemd:
+        name: prometheus
+        state: started
+        enabled: yes
+
+    # Grafana Installation
+    - name: Add Grafana repository
+      yum_repository:
+        name: grafana
+        description: Grafana
+        baseurl: https://packages.grafana.com/oss/rpm
+        gpgcheck: no
+        enabled: yes
+
+    - name: Install Grafana
+      yum:
+        name: grafana
+        state: present
+
+    - name: Start and enable Grafana service
+      systemd:
+        name: grafana-server
+        state: started
+        enabled: true
+
+    - name: Open Grafana port in firewall (if applicable)
+      ansible.builtin.command:
+        cmd: iptables -I INPUT -p tcp --dport 3000 -j ACCEPT
+      when: ansible_facts.os_family == "Amazon"

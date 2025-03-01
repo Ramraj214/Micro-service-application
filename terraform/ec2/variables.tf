@@ -1,5 +1,5 @@
 variable "ami_id" {
-  default = "ami-0fd05997b4dff7aac" # Amazon Linux 2023
+  default = "ami-05fa46471b02db0ce" # Amazon Linux 2023
 }
 
 variable "instance_type" {
